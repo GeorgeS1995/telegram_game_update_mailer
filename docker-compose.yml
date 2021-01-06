@@ -11,13 +11,8 @@ services:
         command: bash -c "/code/wait-for-it/wait-for-it.sh db:5432 --timeout=600 --strict -- python main.py"
         volumes:
           - ./logs:/code/logs/
-        environment:
-          - BOT_API_TOKEN=
-          - LOG_LEVEL=
-          - UPDATE_FREQUENCY=
-          - POSTGRES_DB=
-          - POSTGRES_USER=
-          - POSTGRES_PASSWORD=
+        env_file:
+          - docker.env
         depends_on:
             - db
     db:
@@ -29,7 +24,5 @@ services:
         restart: always
         volumes:
             - ./databases/postgre:/var/lib/postgresql/data
-        environment:
-            - POSTGRES_DB=
-            - POSTGRES_USER=
-            - POSTGRES_PASSWORD=
+        env_file:
+          - docker.env
