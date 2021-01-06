@@ -1,5 +1,5 @@
 import asyncio
-from typing import Callable
+from typing import Callable, Union
 from aiogram import Bot, types
 from aiogram.utils import exceptions
 from core.logger import logger
@@ -9,7 +9,7 @@ from core.models import Chats
 class Mailer(Bot):
     """ Telegram bot api handler, all methods starts with cmd_ will register as bot command
     and must able to recive msg as parameter"""
-    BOT_COMMANDS = []
+    BOT_COMMANDS = set()
     GAME_NEWS_SOURCE = []
 
     def __init__(self, *args, update_frequency=10, without_db=False, **kwargs):
@@ -48,6 +48,9 @@ class Mailer(Bot):
         except exceptions.UserDeactivated:
             logger.error(f"Target [ID:{chat_id}]: user/chat is deactivated")
             self._delete_from_chats(chat_id)
+        except exceptions.BotKicked:
+            logger.error(f"Bot was kicked from the group chat: {chat_id}")
+            self._delete_from_chats(chat_id)
         except exceptions.TelegramAPIError:
             logger.exception(f"Target [ID:{chat_id}]: failed")
         else:
@@ -75,6 +78,21 @@ class Mailer(Bot):
             logger.debug(f"Mailer successfully ended for chats: {self.ACTIVE_CHATS}")
             await asyncio.sleep(self.update_frequency)
 
+    async def _save_new_chats(self, messages: list):
+        for msg in messages:
+            if msg.chat.id not in self.ACTIVE_CHATS:
+                self.ACTIVE_CHATS.add(msg.chat.id)
+                if not Chats.get_or_none(Chats.recipient == msg.chat.id):
+                    Chats.insert(recipient=msg.chat.id).execute()
+                    logger.debug(f"New subsciber, chat id {msg.chat.id}")
+                    await self._welcome_msg(msg)
+
+    def is_command(self, msg: types.Message) -> Union[str, None]:
+        if msg.text:
+            match = msg.text.replace("/", "").split("@")[0]
+            if match in self.BOT_COMMANDS:
+                return match
+
     async def command_runner(self):
         offset = None
         while True:
@@ -86,23 +104,22 @@ class Mailer(Bot):
                 continue
             if results:
                 offset = max([r.update_id for r in results]) + 1
-                cmd_handlers = [getattr(self, cmd.message.text.replace("/", "cmd_"))(cmd.message) for cmd in results]
+                await self._save_new_chats([r.message for r in results])
+                cmd_handlers = []
+                for r in results:
+                    cmd = self.is_command(r.message)
+                    if cmd:
+                        cmd_handlers.append(getattr(self, f"cmd_{cmd}")(r.message))
                 await asyncio.gather(*cmd_handlers)
 
     async def set_bot_commands(self):
         """ Register all func startswith cmd_ as user command """
-        self.BOT_COMMANDS = [types.BotCommand(f.replace("cmd_", ""), str(getattr(self, f).__doc__)) for f in dir(self)
-                             if f.startswith("cmd_")]
-        r = await self.set_my_commands(self.BOT_COMMANDS)
+        bot_commands = [types.BotCommand(f.replace("cmd_", ""), str(getattr(self, f).__doc__)) for f in dir(self)
+                        if f.startswith("cmd_")]
+        r = await self.set_my_commands(bot_commands)
+        self.BOT_COMMANDS = {cmd.command for cmd in bot_commands}
         if not r:
             logger.error("Can't set command's list for bot")
-
-    async def cmd_start(self, message: types.Message) -> None:
-        """ Повторить приветсвенное сообщение """
-        self.ACTIVE_CHATS.add(message.chat.id)
-        if not Chats.get_or_none(Chats.recipient == message.chat.id):
-            Chats.insert(recipient=message.chat.id).execute()
-        await self._welcome_msg(message)
 
     async def cmd_help(self, message: types.Message) -> None:
         """ О боте """
@@ -111,5 +128,4 @@ class Mailer(Bot):
     async def _welcome_msg(self, message: types.Message):
         msg = "Я бот рассыльный информации о обновлениях для игр, пожалуйста не игнорируйте мои сообщения " \
               "и своевременно обновляйте игры"
-        logger.debug(f"New subsciber, chat id {message.chat.id}")
         await message.reply(msg)
