@@ -9,11 +9,14 @@ from core.mailer_core import Mailer
 from core.setting import BOT_API_TOKEN, UPDATE_FREQUENCY
 
 
-def load_modules():
-    project_files = os.listdir(os.getcwd())
+def load_modules(path):
+    project_files = os.listdir(path)
     for f in project_files:
-        if os.path.isdir(f) and "__init__.py" in os.listdir(os.path.join(os.getcwd(), f)) and f != "core":
-            [importlib.import_module(f"{f}.{m.replace('.py', '')}") for m in os.listdir(f) if m != "__init__.py"]
+        if os.path.isdir(os.path.join(path, f)) and "__init__.py" in os.listdir(os.path.join(path, f)) and f != "core":
+            module_path = ".".join(os.path.join(path, f).split("/")[2:])
+            [importlib.import_module(f"{module_path}.{m.replace('.py', '')}") for m in
+             os.listdir(os.path.join(path, f)) if m != "__init__.py"]
+            load_modules(os.path.join(path, f))
 
 
 async def start_bot_jobs(bot: Mailer):
@@ -28,7 +31,7 @@ async def start_bot_jobs(bot: Mailer):
 
 
 async def main():
-    load_modules()
+    load_modules(os.getcwd())
     db.connect()
     router = Router(db)
     router.run()
