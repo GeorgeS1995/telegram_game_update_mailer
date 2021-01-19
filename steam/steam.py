@@ -4,6 +4,7 @@ from typing import Union
 from core.logger import logger
 from core.mailer_core import Mailer
 import aiohttp
+from core.setting import NEWS_TEMPLATE
 from steam.models import SteamGame, SteamGameNews
 
 
@@ -11,18 +12,13 @@ class SteamApiHandler:
     NEWS_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/"
     UPDATE_FEED = "steam_community_announcements"
     CONTENT_LENGTH = 350
-    NEWS_TEMPLATE = "Игра: {game}\n" \
-                    "Новость: {title}\n" \
-                    "Ссылка: {url}\n" \
-                    "Время публикации: {date}\n" \
-                    "Краткое описание: {contents}\n"
     TIME_FORMAT = "%Y-%m-%d, %H:%M:%S"
 
     def _parse_news(self, game: SteamGame, new: dict, news: list) -> None:
         SteamGameNews.insert(game=game, steam_news_id=new['gid'], steam_date=new['date']).execute()
         date_time = datetime.datetime.fromtimestamp(new['date'])
-        news.append(self.NEWS_TEMPLATE.format(game=game.label, title=new['title'], url=new['url'],
-                                              contents=new['contents'], date=date_time.strftime(self.TIME_FORMAT)))
+        news.append(NEWS_TEMPLATE.format(game=game.label, title=new['title'], url=new['url'],
+                                         contents=new['contents'], date=date_time.strftime(self.TIME_FORMAT)))
 
     def _get_bunch_from_db(self, ids: set):
         return SteamGameNews.select().where(SteamGameNews.steam_news_id.in_(ids))

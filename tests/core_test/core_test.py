@@ -1,7 +1,10 @@
 import asyncio
+import os
+import sys
 from asyncio.exceptions import CancelledError
 import pytest
 from core.mailer_core import Mailer
+from main import load_modules
 
 
 @pytest.mark.asyncio
@@ -42,3 +45,11 @@ class TestBotCore:
         tg_bot.cmd_test_route = lambda: None
 
         await tg_bot.set_bot_commands()
+
+    def test_load_modules_modules(self):
+        load_modules(os.path.join(os.getcwd(), "tests", "test_package"))
+        modules = sys.modules.keys()
+        packages = ['tests.test_package', 'tests.test_package.nested_package',
+                    'tests.test_package.nested_package.twice_nested_package']
+        for p in packages:
+            assert p in modules
