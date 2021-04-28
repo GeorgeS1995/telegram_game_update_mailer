@@ -78,18 +78,27 @@ class Mailer(Bot):
             logger.debug(f"Mailer successfully ended for chats: {self.ACTIVE_CHATS}")
             await asyncio.sleep(self.update_frequency)
 
-    async def _save_new_chats(self, messages: list):
-        for msg in messages:
-            if msg.chat.id not in self.ACTIVE_CHATS:
-                self.ACTIVE_CHATS.add(msg.chat.id)
-                if not Chats.get_or_none(Chats.recipient == msg.chat.id):
-                    Chats.insert(recipient=msg.chat.id).execute()
-                    logger.debug(f"New subsciber, chat id {msg.chat.id}")
-                    await self._welcome_msg(msg)
+    async def _add_to_active_chat(self, msg: types.Message):
+        self.ACTIVE_CHATS.add(msg.chat.id)
+        if not Chats.get_or_none(Chats.recipient == msg.chat.id):
+            Chats.insert(recipient=msg.chat.id).execute()
+            logger.debug(f"New subsciber, chat id {msg.chat.id}")
+            await self._welcome_msg(msg)
 
-    def is_command(self, msg: types.Message) -> Union[str, None]:
-        if msg.text:
-            match = msg.text.replace("/", "").split("@")[0]
+    async def cmd_start(self, msg: types.Message):
+        """ Для нового пользователя """
+        if msg.chat.id not in self.ACTIVE_CHATS:
+            return await self._add_to_active_chat(msg)
+        await msg.reply("Вы уже подписаны на рассылку")
+
+    async def _save_new_group_chat(self, upd: types.Update):
+        msg = upd.message
+        if msg and msg.chat.id not in self.ACTIVE_CHATS:
+            return await self._add_to_active_chat(msg)
+
+    def is_command(self, upd: types.Update) -> Union[str, None]:
+        if upd.message and upd.message.text:
+            match = upd.message.text.replace("/", "").split("@")[0]
             if match in self.BOT_COMMANDS:
                 return match
 
@@ -104,12 +113,13 @@ class Mailer(Bot):
                 continue
             if results:
                 offset = max([r.update_id for r in results]) + 1
-                await self._save_new_chats([r.message for r in results])
                 cmd_handlers = []
                 for r in results:
-                    cmd = self.is_command(r.message)
+                    cmd = self.is_command(r)
                     if cmd:
                         cmd_handlers.append(getattr(self, f"cmd_{cmd}")(r.message))
+                        continue
+                    await self._save_new_group_chat(r)
                 await asyncio.gather(*cmd_handlers)
 
     async def set_bot_commands(self):
